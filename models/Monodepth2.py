@@ -1,7 +1,5 @@
 import sys
 
-import matplotlib as mpl
-import matplotlib.cm as cm
 import numpy as np
 import torch
 import torch.hub
@@ -9,6 +7,7 @@ from PIL import Image
 from torchvision import transforms
 
 from _model_base import ModelBase, handle_alpha
+from _util import to_rgb, apply_colormap
 
 
 class Monodepth2(ModelBase):
@@ -26,7 +25,7 @@ class Monodepth2(ModelBase):
 
     @handle_alpha
     @torch.no_grad()
-    def predict(self, input_image):
+    def predict(self, input_image, colormap=None):
         h, w, d = input_image.shape
         assert d == 3, "Input image must be RGB"
 
@@ -44,16 +43,16 @@ class Monodepth2(ModelBase):
         outputs = depth_decoder(features)
 
         disp = outputs[("disp", 0)]
-        disp_resized = torch.nn.functional.interpolate(
+        disp = torch.nn.functional.interpolate(
             disp, (original_height, original_width), mode="bilinear", align_corners=False)
+        disp = disp.squeeze().cpu().numpy()
+        disp /= disp.max()
 
-        # Convert to colormapped depth image
-        disp_resized_np = disp_resized.squeeze().cpu().numpy()
-        vmax = np.percentile(disp_resized_np, 95)
-        normalizer = mpl.colors.Normalize(vmin=disp_resized_np.min(), vmax=vmax)
-        mapper = cm.ScalarMappable(norm=normalizer, cmap='magma')
-        colormapped_im = (mapper.to_rgba(disp_resized_np)[:, :, :3] * 255).astype(np.uint8)
-        return colormapped_im
+        if colormap:
+            out = apply_colormap(disp, colormap)
+        else:
+            out = to_rgb(disp)
+        return (out * 255).astype(np.uint8)
 
 
 model = Monodepth2()
